@@ -20,15 +20,18 @@ jobs:
   docker-release:
     if: ${{ (github.event_name == 'release' && github.event.release.target_commitish == 'master') || (github.event_name == 'workflow_dispatch' && github.ref_name == 'master') || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'master') }}
     runs-on: ubuntu-latest
-    env:
-      RELEASE: ${{ github.event.inputs.release || github.event.release.tag_name || github.event.workflow_run.head_sha }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
           persist-credentials: false
+      - name: Set release version
+        run: |
+          set -euo pipefail
+          VERSION=$(make -f Makefile.release version)
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
       - name: Build Docker Images
-        run: make VERSION=$(echo ${RELEASE} | cut -c1-7) DOCKER=ghcr.io/${{ github.repository_owner }} -f Makefile.docker release
+        run: make VERSION=${VERSION} DOCKER=ghcr.io/${{ github.repository_owner }} -f Makefile.docker release
       - name: Show Docker Images
         run: docker images
       - name: GHCR login
@@ -38,4 +41,4 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish Docker Images
-        run: make VERSION=$(echo ${RELEASE} | cut -c1-7) DOCKER=ghcr.io/${{ github.repository_owner }} -f Makefile.docker docker-push
+        run: make VERSION=${VERSION} DOCKER=ghcr.io/${{ github.repository_owner }} -f Makefile.docker docker-push

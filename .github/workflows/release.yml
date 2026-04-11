@@ -49,7 +49,19 @@ jobs:
       - name: Remove hidden section
         env:
           VERSION: ${{ steps.info.outputs.version }}
-        run: sed '/+++/,//d' "notes/coredns-${VERSION}.md" > release.md
+        run: |
+          set -euo pipefail
+          NOTES_FILE="notes/coredns-${VERSION}.md"
+          if [[ -f "${NOTES_FILE}" ]]; then
+            sed '/+++/,//d' "${NOTES_FILE}" > release.md
+          else
+            {
+              echo "Release v${VERSION}"
+              echo
+              echo "No release notes file found at ${NOTES_FILE}."
+              echo "Please update release notes before publishing."
+            } > release.md
+          fi
       - name: Log release info
         env:
           COMMIT: ${{ steps.info.outputs.commit }}
