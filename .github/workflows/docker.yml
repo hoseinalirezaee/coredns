@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   docker-release:
-    if: ${{ github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'master') }}
+    if: ${{ (github.event_name == 'release' && github.event.release.target_commitish == 'master') || (github.event_name == 'workflow_dispatch' && github.ref_name == 'master') || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'master') }}
     runs-on: ubuntu-latest
     env:
       RELEASE: ${{ github.event.inputs.release || github.event.release.tag_name || github.event.workflow_run.head_sha }}
