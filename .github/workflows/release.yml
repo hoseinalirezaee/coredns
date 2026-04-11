@@ -48,7 +48,13 @@ jobs:
         run: make -f Makefile.release release
 
       - name: Build release binary sha256
-        run: (cd release; for asset in `ls -A *.tgz *.zip`; do sha256sum "$asset" > "$asset".sha256; done)
+        run: |
+          set -x -e
+          shopt -s nullglob
+          assets=(release/*.tgz release/*.zip)
+          for asset in "${assets[@]}"; do
+            sha256sum "$asset" > "$asset".sha256
+          done
 
       - name: Generate release notes
         env:
@@ -72,7 +78,11 @@ jobs:
           echo "${COMMIT}"
           echo "${VERSION}"
           cat release.md
-          sha256sum release/*.tgz release/*.zip
+          shopt -s nullglob
+          assets=(release/*.tgz release/*.zip)
+          if (( ${#assets[@]} > 0 )); then
+            sha256sum "${assets[@]}"
+          fi
 
       - name: Publish release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe  # v2.6.1
