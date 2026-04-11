@@ -91,6 +91,64 @@ func TestSetup(t *testing.T) {
 	}
 }
 
+func TestSetupReadTimeoutErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr string
+	}{
+		{
+			name: "invalid duration",
+			input: `forward . 1.1.1.1 {
+				read_timeout 1.1.1.1 notaduration
+			}`,
+			wantErr: "invalid duration",
+		},
+		{
+			name: "zero duration",
+			input: `forward . 1.1.1.1 {
+				read_timeout 1.1.1.1 0s
+			}`,
+			wantErr: "greater than zero",
+		},
+		{
+			name: "negative duration",
+			input: `forward . 1.1.1.1 {
+				read_timeout 1.1.1.1 -1s
+			}`,
+			wantErr: "greater than zero",
+		},
+		{
+			name: "duplicate upstream",
+			input: `forward . 1.1.1.1 {
+				read_timeout 1.1.1.1 500ms
+				read_timeout dns://1.1.1.1 2s
+			}`,
+			wantErr: "already configured",
+		},
+		{
+			name: "unknown upstream",
+			input: `forward . 1.1.1.1 {
+				read_timeout 8.8.8.8 500ms
+			}`,
+			wantErr: "unknown upstream",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := caddy.NewTestController("dns", tc.input)
+			_, err := parseForward(c)
+			if err == nil {
+				t.Fatalf("expected an error")
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("unexpected error: got %q, want substring %q", err.Error(), tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestSplitZone(t *testing.T) {
 	tests := []struct {
 		input        string
@@ -705,6 +763,93 @@ func TestFailoverValidation(t *testing.T) {
 				t.Fatalf("expected error to contain %q, got: %v", tc.wantError, err)
 			}
 		})
+	}
+}
+
+func TestReadTimeoutPerUpstreamE2E(t *testing.T) {
+	slow := dnstest.NewMultipleServer(func(w dns.ResponseWriter, r *dns.Msg) {
+		time.Sleep(300 * time.Millisecond)
+		ret := new(dns.Msg)
+		ret.SetReply(r)
+		ret.Answer = append(ret.Answer, test.A("example.org. IN A 10.0.0.1"))
+		w.WriteMsg(ret)
+	})
+	defer slow.Close()
+
+	fast := dnstest.NewMultipleServer(func(w dns.ResponseWriter, r *dns.Msg) {
+		ret := new(dns.Msg)
+		ret.SetReply(r)
+		ret.Answer = append(ret.Answer, test.A("example.org. IN A 10.0.0.2"))
+		w.WriteMsg(ret)
+	})
+	defer fast.Close()
+
+	c := caddy.NewTestController("dns", fmt.Sprintf(`forward . %s %s {
+		policy sequential
+		read_timeout %s 100ms
+		read_timeout %s 1s
+	}`, slow.Addr, fast.Addr, slow.Addr, fast.Addr))
+
+	fs, err := parseForward(c)
+	if err != nil {
+		t.Fatalf("failed to parse forward: %v", err)
+	}
+	f := fs[0]
+	f.OnStartup()
+	defer f.OnShutdown()
+
+	m := new(dns.Msg)
+	m.SetQuestion("example.org.", dns.TypeA)
+	rec := dnstest.NewRecorder(&test.ResponseWriter{})
+
+	if _, err := f.ServeDNS(context.Background(), rec, m); err != nil {
+		t.Fatalf("expected successful response, got: %v", err)
+	}
+	if got := rec.Msg.Answer[0].(*dns.A).A.String(); got != "10.0.0.2" {
+		t.Fatalf("expected query to fail over to fast upstream, got answer from %s", got)
+	}
+}
+
+func TestReadTimeoutDefaultForUnspecifiedUpstreamE2E(t *testing.T) {
+	slow := dnstest.NewMultipleServer(func(w dns.ResponseWriter, r *dns.Msg) {
+		time.Sleep(1500 * time.Millisecond)
+		ret := new(dns.Msg)
+		ret.SetReply(r)
+		ret.Answer = append(ret.Answer, test.A("example.org. IN A 10.0.0.1"))
+		w.WriteMsg(ret)
+	})
+	defer slow.Close()
+
+	fast := dnstest.NewMultipleServer(func(w dns.ResponseWriter, r *dns.Msg) {
+		ret := new(dns.Msg)
+		ret.SetReply(r)
+		ret.Answer = append(ret.Answer, test.A("example.org. IN A 10.0.0.2"))
+		w.WriteMsg(ret)
+	})
+	defer fast.Close()
+
+	c := caddy.NewTestController("dns", fmt.Sprintf(`forward . %s %s {
+		policy sequential
+		read_timeout %s 100ms
+	}`, slow.Addr, fast.Addr, fast.Addr))
+
+	fs, err := parseForward(c)
+	if err != nil {
+		t.Fatalf("failed to parse forward: %v", err)
+	}
+	f := fs[0]
+	f.OnStartup()
+	defer f.OnShutdown()
+
+	m := new(dns.Msg)
+	m.SetQuestion("example.org.", dns.TypeA)
+	rec := dnstest.NewRecorder(&test.ResponseWriter{})
+
+	if _, err := f.ServeDNS(context.Background(), rec, m); err != nil {
+		t.Fatalf("expected successful response, got: %v", err)
+	}
+	if got := rec.Msg.Answer[0].(*dns.A).A.String(); got != "10.0.0.1" {
+		t.Fatalf("expected default read timeout to allow slow upstream response, got %s", got)
 	}
 }
 

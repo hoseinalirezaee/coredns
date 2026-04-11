@@ -221,7 +221,38 @@ func parseStanza(c *caddy.Controller) (*Forward, error) {
 		f.proxies[i].GetHealthchecker().SetDomain(f.opts.HCDomain)
 	}
 
+	seenReadTimeouts := map[string]struct{}{}
+	for i := range f.proxies {
+		if timeout, ok := f.readTimeouts[f.proxies[i].Addr()]; ok {
+			f.proxies[i].SetReadTimeout(timeout)
+			seenReadTimeouts[f.proxies[i].Addr()] = struct{}{}
+		}
+	}
+	for upstream := range f.readTimeouts {
+		if _, ok := seenReadTimeouts[upstream]; !ok {
+			return f, fmt.Errorf("read_timeout configured for unknown upstream: %s", upstream)
+		}
+	}
+
 	return f, nil
+}
+
+func canonicalizeReadTimeoutUpstream(upstream string) (string, error) {
+	toHosts, err := parse.HostPortOrFile(upstream)
+	if err != nil {
+		return "", err
+	}
+	if len(toHosts) != 1 {
+		return "", fmt.Errorf("invalid read_timeout upstream: %s", upstream)
+	}
+	host, _ := splitZone(toHosts[0])
+	trans, h := parse.Transport(host)
+	switch trans {
+	case transport.DNS, transport.TLS:
+		return h, nil
+	default:
+		return "", fmt.Errorf("'%s' is not supported as a destination protocol in forward: %s", trans, host)
+	}
 }
 
 func parseBlock(c *caddy.Controller, f *Forward) error {
@@ -419,6 +450,31 @@ func parseBlock(c *caddy.Controller, f *Forward) error {
 
 			f.failoverRcodes = append(f.failoverRcodes, rc)
 		}
+	case "read_timeout":
+		args := c.RemainingArgs()
+		if len(args) != 2 {
+			return c.ArgErr()
+		}
+
+		upstream, err := canonicalizeReadTimeoutUpstream(args[0])
+		if err != nil {
+			return err
+		}
+		timeout, err := time.ParseDuration(args[1])
+		if err != nil {
+			return err
+		}
+		if timeout <= 0 {
+			return fmt.Errorf("read_timeout must be greater than zero: %s", timeout)
+		}
+
+		if f.readTimeouts == nil {
+			f.readTimeouts = make(map[string]time.Duration)
+		}
+		if _, ok := f.readTimeouts[upstream]; ok {
+			return fmt.Errorf("read_timeout already configured for upstream: %s", upstream)
+		}
+		f.readTimeouts[upstream] = timeout
 	default:
 		return c.Errf("unknown property '%s'", c.Val())
 	}

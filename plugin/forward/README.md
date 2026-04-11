@@ -51,6 +51,7 @@ forward FROM TO... {
     tls_servername NAME
     policy random|round_robin|sequential
     health_check DURATION [no_rec] [domain FQDN]
+    read_timeout UPSTREAM DURATION
     max_concurrent MAX
     next RCODE_1 [RCODE_2] [RCODE_3...]
     failfast_all_unhealthy_upstreams
@@ -105,6 +106,9 @@ forward FROM TO... {
     The flag is default `true`.
   * `domain FQDN` - set the domain name used for health checks to **FQDN**.
     If not configured, the domain name used for health checks is `.`.
+* `read_timeout` **UPSTREAM** **DURATION** sets the request read timeout for a specific upstream.
+  `UPSTREAM` must match one of the configured `TO` endpoints after canonicalization (same address as `Proxy.Addr()`).
+  `DURATION` must be greater than zero. If not configured for an upstream, the default read timeout remains 2s.
 * `max_concurrent` **MAX** will limit the number of concurrent queries to **MAX**.  Any new query that would
   raise the number of concurrent queries above the **MAX** will result in a REFUSED response. This
   response does not count as a health failure. When choosing a value for **MAX**, pick a number
@@ -120,7 +124,7 @@ Also note the TLS config is "global" for the whole forwarding proxy if you need 
 On each endpoint, the timeouts for communication are set as follows:
 
 * The dial timeout by default is 30s, and can decrease automatically down to 1s based on early results.
-* The read timeout is static at 2s.
+* The read timeout defaults to 2s and can be overridden per-upstream with `read_timeout`.
 
 ## Metadata
 
@@ -263,6 +267,18 @@ Or with multiple upstreams from the same provider
        health_check 5s
     }
     cache 30
+}
+~~~
+
+Configure per-upstream read timeouts:
+
+~~~ corefile
+. {
+    forward . 1.1.1.1 2.2.2.2 tls://9.9.9.9 {
+        read_timeout 1.1.1.1 500ms
+        read_timeout 2.2.2.2 2s
+        read_timeout tls://9.9.9.9 4s
+    }
 }
 ~~~
 
