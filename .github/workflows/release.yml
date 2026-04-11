@@ -26,39 +26,42 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.commit || github.event.workflow_run.head_sha }}
           persist-credentials: false
-      - name: Set up info
+
+      - name: Set up release metadata
         env:
           INPUT_COMMIT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.commit || github.event.workflow_run.head_sha }}
         run: |
           set -x -e
-          VERSION=$(make -f Makefile.release version)
           COMMIT=$(git rev-parse --quiet --verify "${INPUT_COMMIT}")
-          if [[ "$(git tag -l v${VERSION})" == "v${VERSION}" ]]; then
-            echo "v${VERSION} already released"
+          VERSION=$(git rev-parse --short=7 "${COMMIT}")
+          if [[ "$(git tag -l "${VERSION}")" == "${VERSION}" ]]; then
+            echo "${VERSION} already released"
             exit 1
           fi
-          echo "commit=${COMMIT}" >> $GITHUB_OUTPUT
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "commit=${COMMIT}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
         id: info
+
       - name: Build release binary
-        run: make -f Makefile.release release
-      - name: Build release binary sha256
-        run: (cd release; for asset in `ls -A *.tgz *.zip`; do sha256sum $asset > $asset.sha256; done)
-      - name: Remove hidden section
         env:
+          VERSION: ${{ steps.info.outputs.version }}
+        run: make -f Makefile.release release
+
+      - name: Build release binary sha256
+        run: (cd release; for asset in `ls -A *.tgz *.zip`; do sha256sum "$asset" > "$asset".sha256; done)
+
+      - name: Generate release notes
+        env:
+          COMMIT: ${{ steps.info.outputs.commit }}
           VERSION: ${{ steps.info.outputs.version }}
         run: |
           set -x -e
-          NOTES_FILE="notes/coredns-${VERSION}.md"
-          if [[ -f "${NOTES_FILE}" ]]; then
-            sed '/+++/,//d' "${NOTES_FILE}" > release.md
-          else
-            {
-              echo "Release v${VERSION}"
-              echo
-              echo "No release notes file was found at ${NOTES_FILE}."
-            } > release.md
-          fi
+          {
+            echo "Automated release for commit ${COMMIT}."
+            echo
+            echo "Version: ${VERSION}"
+          } > release.md
+
       - name: Log release info
         env:
           COMMIT: ${{ steps.info.outputs.commit }}
@@ -70,16 +73,17 @@ jobs:
           echo "${VERSION}"
           cat release.md
           sha256sum release/*.tgz release/*.zip
-      - name: Draft release
+
+      - name: Publish release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe  # v2.6.1
         with:
           body_path: release.md
-          name: v${{ steps.info.outputs.version }}
-          tag_name: v${{ steps.info.outputs.version }}
+          name: ${{ steps.info.outputs.version }}
+          tag_name: ${{ steps.info.outputs.version }}
           target_commitish: ${{ steps.info.outputs.commit }}
           files: |
             release/*.tgz
             release/*.tgz.sha256
             release/*.zip
             release/*.zip.sha256
-          draft: true
+          draft: false

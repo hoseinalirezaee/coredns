@@ -49,8 +49,8 @@ ifeq (, $(shell which curl))
 endif
 
 NAME:=coredns
-VERSION:=$(shell grep 'CoreVersion' coremain/version.go | awk '{ print $$3 }' | tr -d '"')
-GITHUB:=coredns
+VERSION?=$(shell grep 'CoreVersion' coremain/version.go | awk '{ print $$3 }' | tr -d '"')
+GITHUB_REPO?=coredns/coredns
 LINUX_ARCH:=amd64 arm arm64 mips64le ppc64le s390x mips riscv64
 GOLANG_VERSION ?= $(shell cat .go-version)
 
@@ -96,7 +96,7 @@ ifeq ($(GITHUB_ACCESS_TOKEN),)
 	$(error "Please set the GITHUB_ACCESS_TOKEN environment variable")
 else
 	@echo Releasing: $(VERSION)
-	@$(eval RELEASE:=$(shell curl -s -d '{"tag_name": "v$(VERSION)", "name": "v$(VERSION)"}' -H "Authorization: token ${GITHUB_ACCESS_TOKEN}" "https://api.github.com/repos/$(GITHUB)/$(NAME)/releases" | grep -m 1 '"id"' | tr -cd '[[:digit:]]'))
+	@$(eval RELEASE:=$(shell curl -s -d '{"tag_name": "$(VERSION)", "name": "$(VERSION)"}' -H "Authorization: token ${GITHUB_ACCESS_TOKEN}" "https://api.github.com/repos/$(GITHUB_REPO)/releases" | grep -m 1 '"id"' | tr -cd '[[:digit:]]'))
 	@echo ReleaseID: $(RELEASE)
 	@( cd release; for asset in `ls -A *.tgz *.zip`; do \
 	    echo $$asset; \
@@ -104,7 +104,7 @@ else
 	      -H "Content-Type: application/octet-stream" \
 	      -H "Authorization: token ${GITHUB_ACCESS_TOKEN}" \
 	      --data-binary "@$$asset" \
-	      "https://uploads.github.com/repos/$(GITHUB)/$(NAME)/releases/$(RELEASE)/assets?name=$${asset}" ; \
+	      "https://uploads.github.com/repos/$(GITHUB_REPO)/releases/$(RELEASE)/assets?name=$${asset}" ; \
 	done )
 	@( cd release; for asset in `ls -A *.tgz *.zip`; do \
 	    sha256sum $$asset > $$asset.sha256; \
@@ -115,7 +115,7 @@ else
 	      -H "Content-Type: text/plain" \
 	      -H "Authorization: token ${GITHUB_ACCESS_TOKEN}" \
 	      --data-binary "@$$asset" \
-	      "https://uploads.github.com/repos/$(GITHUB)/$(NAME)/releases/$(RELEASE)/assets?name=$${asset}" ; \
+	      "https://uploads.github.com/repos/$(GITHUB_REPO)/releases/$(RELEASE)/assets?name=$${asset}" ; \
 	done )
 endif
 
@@ -138,7 +138,7 @@ notes:
 prs:
 	@echo "## Noteworthy Changes"
 	@echo
-	@git log $$(git describe --tags --abbrev=0)..HEAD --oneline | awk ' { $$1="";print } ' | sed 's/^ //' | sed -e 's|#\([0-9]\)|https://github.com/coredns/coredns/pull/\1|' | \
+	@git log $$(git describe --tags --abbrev=0)..HEAD --oneline | awk ' { $$1="";print } ' | sed 's/^ //' | sed -e 's|#\([0-9]\)|https://github.com/$(GITHUB_REPO)/pull/\1|' | \
 	    grep -v '^build(deps)' | \
 	    grep -v '^auto go mod tidy' | grep -v '^auto remove' | grep -v '^auto make' | sed 's/^/* /'
 
