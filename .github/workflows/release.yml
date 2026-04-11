@@ -33,13 +33,11 @@ jobs:
           set -x -e
           VERSION=$(make -f Makefile.release version)
           COMMIT=$(git rev-parse --quiet --verify "${INPUT_COMMIT}")
-          SHORT_SHA=$(git rev-parse --short "${COMMIT}")
-          if [[ "$(git tag -l ${SHORT_SHA})" == "${SHORT_SHA}" ]]; then
-            echo "${SHORT_SHA} already released"
+          if [[ "$(git tag -l v${VERSION})" == "v${VERSION}" ]]; then
+            echo "v${VERSION} already released"
             exit 1
           fi
           echo "commit=${COMMIT}" >> $GITHUB_OUTPUT
-          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
         id: info
       - name: Build release binary
@@ -53,13 +51,11 @@ jobs:
       - name: Log release info
         env:
           COMMIT: ${{ steps.info.outputs.commit }}
-          SHORT_SHA: ${{ steps.info.outputs.short_sha }}
           VERSION: ${{ steps.info.outputs.version }}
         run: |
           set -x -e
           git log -1
           echo "${COMMIT}"
-          echo "${SHORT_SHA}"
           echo "${VERSION}"
           cat release.md
           sha256sum release/*.tgz release/*.zip
@@ -68,7 +64,7 @@ jobs:
         with:
           body_path: release.md
           name: v${{ steps.info.outputs.version }}
-          tag_name: ${{ steps.info.outputs.short_sha }}
+          tag_name: v${{ steps.info.outputs.version }}
           target_commitish: ${{ steps.info.outputs.commit }}
           files: |
             release/*.tgz
