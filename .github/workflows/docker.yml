@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   docker-release:
@@ -22,16 +23,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Build Docker Images
-        run: make VERSION=${RELEASE:1} DOCKER=coredns -f Makefile.docker release
+        run: make VERSION=${RELEASE:1} DOCKER=ghcr.io/${{ github.repository_owner }} -f Makefile.docker release
       - name: Show Docker Images
         run: docker images
-      - name: Docker login
+      - name: GHCR login
         uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2  # v4.0.0
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish Docker Images
-        run: make VERSION=${RELEASE:1} DOCKER=coredns -f Makefile.docker docker-push
-        env:
-          DOCKER_LOGIN: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+        run: make VERSION=${RELEASE:1} DOCKER=ghcr.io/${{ github.repository_owner }} -f Makefile.docker docker-push
