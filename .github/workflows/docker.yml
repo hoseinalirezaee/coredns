@@ -36,7 +36,7 @@ jobs:
           fi
 
       - name: Build Docker Images
-        run: make VERSION=${VERSION} DOCKER=ghcr.io/${{ github.repository_owner }} -f Makefile.docker release
+        run: make VERSION=${VERSION} DOCKER=ghcr.io/${{ github.repository_owner }} GITHUB_REPO=${{ github.repository }} -f Makefile.docker release
 
       - name: Show Docker Images
         run: docker images
@@ -49,4 +49,4 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish Docker Images
-        run: make VERSION=${VERSION} DOCKER=ghcr.io/${{ github.repository_owner }} -f Makefile.docker docker-push
+        run: make VERSION=${VERSION} DOCKER=ghcr.io/${{ github.repository_owner }} GITHUB_REPO=${{ github.repository }} -f Makefile.docker docker-push
