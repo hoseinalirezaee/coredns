@@ -55,6 +55,7 @@ type Forward struct {
 	failfastUnhealthyUpstreams bool
 	failoverRcodes             []int
 	maxConnectAttempts         uint32
+	readTimeouts               map[string]time.Duration
 
 	opts proxyPkg.Options // also here for testing
 
