@@ -1,6 +1,7 @@
 package log
 
 import (
+	"net"
 	"reflect"
 	"testing"
 
@@ -149,6 +150,29 @@ func TestLogParse(t *testing.T) {
 			Format:    "{when} " + CommonLogFormat + " {/forward/upstream}",
 			Class:     map[response.Class]struct{}{response.All: {}},
 		}}},
+		{`log {
+			except_source 10.1.0.0/16 2001:db8::/32
+		}`, false, []Rule{{
+			NameScope: ".",
+			Format:    CommonLogFormat,
+			Class:     map[response.Class]struct{}{response.All: {}},
+			DenyNets:  mustCIDRs(t, "10.1.0.0/16", "2001:db8::/32"),
+		}}},
+		{`log example.org {
+			class success denial
+			except_source 10.1.0.0/16
+		}`, false, []Rule{{
+			NameScope: "example.org.",
+			Format:    CommonLogFormat,
+			Class:     map[response.Class]struct{}{response.Success: {}, response.Denial: {}},
+			DenyNets:  mustCIDRs(t, "10.1.0.0/16"),
+		}}},
+		{`log {
+			except_source 10.0.0.0
+		}`, true, []Rule{}},
+		{`log {
+			except_source no-cidr
+		}`, true, []Rule{}},
 	}
 	for i, test := range tests {
 		c := caddy.NewTestController("dns", test.inputLogRules)
@@ -179,6 +203,25 @@ func TestLogParse(t *testing.T) {
 				t.Errorf("Test %d expected %dth LogRule Class to be  %v  , but got %v",
 					i, j, test.expectedLogRules[j].Class, actualLogRule.Class)
 			}
+			if !reflect.DeepEqual(actualLogRule.DenyNets, test.expectedLogRules[j].DenyNets) {
+				t.Errorf("Test %d expected %dth LogRule DenyNets to be  %v  , but got %v",
+					i, j, test.expectedLogRules[j].DenyNets, actualLogRule.DenyNets)
+			}
 		}
 	}
+}
+
+func mustCIDRs(t *testing.T, cidrs ...string) []*net.IPNet {
+	t.Helper()
+
+	nets := make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		_, n, err := net.ParseCIDR(cidr)
+		if err != nil {
+			t.Fatalf("invalid cidr %q in test: %v", cidr, err)
+		}
+		nets = append(nets, n)
+	}
+
+	return nets
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"log"
+	"net"
 	"strings"
 	"testing"
 
@@ -250,6 +251,80 @@ func TestLogged(t *testing.T) {
 			t.Errorf("Expected it to NOT contains: %s. Logged string: %s", tc.ShouldNOTString, logged)
 		}
 	}
+}
+
+func TestLoggedExceptSourceFilter(t *testing.T) {
+	tests := []struct {
+		name      string
+		remoteIP  string
+		denyNets  []string
+		shouldLog bool
+	}{
+		{
+			name:      "request outside except_source is logged",
+			remoteIP:  "10.240.0.1",
+			denyNets:  []string{"192.168.0.0/16"},
+			shouldLog: true,
+		},
+		{
+			name:      "request in except_source is not logged",
+			remoteIP:  "192.168.0.10",
+			denyNets:  []string{"192.168.0.0/16"},
+			shouldLog: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var f bytes.Buffer
+			log.SetOutput(&f)
+
+			rule := Rule{
+				NameScope: ".",
+				Format:    DefaultLogFormat,
+				Class:     map[response.Class]struct{}{response.All: {}},
+				DenyNets:  parseCIDRStrings(t, tc.denyNets...),
+			}
+			logger := Logger{
+				Rules: []Rule{rule},
+				Next:  test.ErrorHandler(),
+				repl:  replacer.New(),
+			}
+
+			ctx := context.TODO()
+			r := new(dns.Msg)
+			r.SetQuestion("example.org.", dns.TypeA)
+			rec := dnstest.NewRecorder(&test.ResponseWriter{RemoteIP: tc.remoteIP})
+
+			_, err := logger.ServeDNS(ctx, rec, r)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			logged := f.String()
+			if tc.shouldLog && !strings.Contains(logged, "A IN example.org.") {
+				t.Fatalf("expected request to be logged, got %q", logged)
+			}
+			if !tc.shouldLog && len(logged) != 0 {
+				t.Fatalf("expected request not to be logged, got %q", logged)
+			}
+		})
+	}
+}
+
+func parseCIDRStrings(t *testing.T, cidrs ...string) []*net.IPNet {
+	t.Helper()
+
+	nets := make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			t.Fatalf("bad cidr %q in test: %v", cidr, err)
+		}
+		nets = append(nets, ipNet)
+	}
+
+	return nets
 }
 
 func BenchmarkLogged(b *testing.B) {

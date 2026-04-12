@@ -3,6 +3,7 @@ package log
 
 import (
 	"context"
+	"net"
 	"time"
 
 	"github.com/coredns/coredns/plugin"
@@ -30,6 +31,10 @@ func (l Logger) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) 
 	name := state.Name()
 	for _, rule := range l.Rules {
 		if !plugin.Name(rule.NameScope).Matches(name) {
+			continue
+		}
+
+		if !rule.shouldLogIP(state.IP()) {
 			continue
 		}
 
@@ -71,6 +76,29 @@ type Rule struct {
 	NameScope string
 	Class     map[response.Class]struct{}
 	Format    string
+	DenyNets  []*net.IPNet
+}
+
+func (r Rule) shouldLogIP(ipString string) bool {
+	ip := net.ParseIP(ipString)
+	if ip == nil {
+		return false
+	}
+
+	if containsIP(r.DenyNets, ip) {
+		return false
+	}
+	return true
+}
+
+func containsIP(nets []*net.IPNet, ip net.IP) bool {
+	for _, n := range nets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+
+	return false
 }
 
 const (
