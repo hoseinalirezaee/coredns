@@ -1,6 +1,8 @@
 package log
 
 import (
+	"fmt"
+	"net"
 	"strings"
 
 	"github.com/coredns/caddy"
@@ -70,6 +72,7 @@ func logParse(c *caddy.Controller) ([]Rule, error) {
 
 		// Class refinements in an extra block.
 		classes := make(map[response.Class]struct{})
+		var denyNets []*net.IPNet
 		for c.NextBlock() {
 			switch c.Val() {
 			// class followed by combinations of all, denial, error and success.
@@ -85,6 +88,16 @@ func logParse(c *caddy.Controller) ([]Rule, error) {
 					}
 					classes[cls] = struct{}{}
 				}
+			case "except_source":
+				exceptSourceArgs := c.RemainingArgs()
+				if len(exceptSourceArgs) == 0 {
+					return nil, c.ArgErr()
+				}
+				nets, err := parseCIDRs(exceptSourceArgs)
+				if err != nil {
+					return nil, err
+				}
+				denyNets = append(denyNets, nets...)
 			default:
 				return nil, c.ArgErr()
 			}
@@ -95,8 +108,21 @@ func logParse(c *caddy.Controller) ([]Rule, error) {
 
 		for i := len(rules) - 1; i >= length; i-- {
 			rules[i].Class = classes
+			rules[i].DenyNets = denyNets
 		}
 	}
 
 	return rules, nil
+}
+
+func parseCIDRs(cidrs []string) ([]*net.IPNet, error) {
+	nets := make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		_, n, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CIDR %q: %w", cidr, err)
+		}
+		nets = append(nets, n)
+	}
+	return nets, nil
 }

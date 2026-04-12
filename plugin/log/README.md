@@ -35,10 +35,12 @@ You can further specify the classes of responses that get logged:
 ~~~ txt
 log [NAMES...] [FORMAT] {
     class CLASSES...
+    except_source CIDR...
 }
 ~~~
 
 * `CLASSES` is a space-separated list of classes of responses that should be logged
+* `except_source` is an optional space-separated list of CIDRs; matching client source IPs are never logged
 
 The classes of responses have the following meaning:
 
@@ -142,6 +144,26 @@ Log all queries which were not resolved successfully in the Combined Log Format.
 . {
     log . {combined} {
         class denial error
+    }
+}
+~~~
+
+Exclude private subnets from logging.
+
+~~~ corefile
+. {
+    log . {
+        except_source 10.0.0.0/8 192.168.0.0/16 172.16.0.0/12
+    }
+}
+~~~
+
+Exclude a specific subnet while logging all others.
+
+~~~ corefile
+. {
+    log . {
+        except_source 10.10.0.0/16
     }
 }
 ~~~
