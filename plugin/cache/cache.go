@@ -222,6 +222,13 @@ func (w *ResponseWriter) Hijack() {
 
 // WriteMsg implements the dns.ResponseWriter interface.
 func (w *ResponseWriter) WriteMsg(res *dns.Msg) error {
+	if w.bypassZonefile && cachecontrol.IsZonefile(w.ctx) {
+		if w.prefetch {
+			return nil
+		}
+		return w.ResponseWriter.WriteMsg(res)
+	}
+
 	res = res.Copy()
 	mt, _ := response.Typify(res, w.now().UTC())
 
@@ -251,7 +258,7 @@ func (w *ResponseWriter) WriteMsg(res *dns.Msg) error {
 		res.AuthenticatedData = false
 	}
 
-	if hasKey && duration > 0 && !(w.bypassZonefile && cachecontrol.IsZonefile(w.ctx)) {
+	if hasKey && duration > 0 {
 		if w.state.Match(res) {
 			w.set(res, key, mt, duration)
 			cacheSize.WithLabelValues(w.server, Success, w.zonesMetricLabel, w.viewMetricLabel).Set(float64(w.pcache.Len()))

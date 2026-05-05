@@ -418,6 +418,7 @@ func TestBypassZonefileMarkedResponses(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := New()
+			c.pttl = 5 * time.Second
 			c.bypassZonefile = tc.bypass
 			c.Next = zonefileMarkingBackend(tc.kind, tc.marked)
 
@@ -432,6 +433,18 @@ func TestBypassZonefileMarkedResponses(t *testing.T) {
 			}
 			if got := c.ncache.Len(); got != tc.wantNcache {
 				t.Fatalf("negative cache length: got %d, want %d", got, tc.wantNcache)
+			}
+
+			if tc.bypass && tc.marked && tc.kind == "positive" {
+				if got, want := rec.Msg.Answer[0].Header().Ttl, uint32(60); got != want {
+					t.Fatalf("marked response TTL was changed: got %d, want %d", got, want)
+				}
+				if !rec.Msg.AuthenticatedData {
+					t.Fatal("marked response AD bit was cleared")
+				}
+				if rec.Msg.IsEdns0() == nil {
+					t.Fatal("marked response OPT record was filtered")
+				}
 			}
 		})
 	}
@@ -739,6 +752,8 @@ func zonefileMarkingBackend(kind string, marked bool) plugin.Handler {
 		switch kind {
 		case "positive":
 			m.Answer = []dns.RR{test.A(m.Question[0].Name + " 60 IN A 127.0.0.53")}
+			m.AuthenticatedData = true
+			m.SetEdns0(4096, true)
 		case "nxdomain":
 			m.Rcode = dns.RcodeNameError
 			m.Ns = []dns.RR{test.SOA("example.org. 60 IN SOA sns.dns.icann.org. noc.dns.icann.org. 2016082540 7200 3600 1209600 60")}
