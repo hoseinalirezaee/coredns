@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/coredns/coredns/plugin/pkg/cachecontrol"
 	"github.com/coredns/coredns/plugin/pkg/dnstest"
 	"github.com/coredns/coredns/plugin/pkg/fall"
 	"github.com/coredns/coredns/plugin/test"
@@ -178,6 +179,50 @@ func TestLookup(t *testing.T) {
 		if err := test.SortAndCheck(resp, tc); err != nil {
 			t.Error(err)
 		}
+	}
+}
+
+func TestLookupMarksZonefileResponse(t *testing.T) {
+	zone, err := Parse(strings.NewReader(dbMiekNL), testzone, "stdin", 0)
+	if err != nil {
+		t.Fatalf("Expected no error when reading zone, got %q", err)
+	}
+
+	fm := File{Next: test.ErrorHandler(), Zones: Zones{Z: map[string]*Zone{testzone: zone}, Names: []string{testzone}}}
+	ctx := cachecontrol.ContextWithBypassMarker(context.Background())
+
+	m := new(dns.Msg)
+	m.SetQuestion("www.miek.nl.", dns.TypeA)
+	rec := dnstest.NewRecorder(&test.ResponseWriter{})
+	if _, err := fm.ServeDNS(ctx, rec, m); err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	if !cachecontrol.IsZonefile(ctx) {
+		t.Fatal("expected file response to mark zonefile context")
+	}
+}
+
+func TestLookupFallthroughDoesNotMarkZonefileResponse(t *testing.T) {
+	zone, err := Parse(strings.NewReader(dbMiekNL), testzone, "stdin", 0)
+	if err != nil {
+		t.Fatalf("Expected no error when reading zone, got %q", err)
+	}
+
+	fm := File{
+		Next:  test.ErrorHandler(),
+		Zones: Zones{Z: map[string]*Zone{testzone: zone}, Names: []string{testzone}},
+		Fall:  fall.Root,
+	}
+	ctx := cachecontrol.ContextWithBypassMarker(context.Background())
+
+	m := new(dns.Msg)
+	m.SetQuestion("doesnotexist.miek.nl.", dns.TypeA)
+	rec := dnstest.NewRecorder(&test.ResponseWriter{})
+	fm.ServeDNS(ctx, rec, m)
+
+	if cachecontrol.IsZonefile(ctx) {
+		t.Fatal("fallthrough response should not mark zonefile context")
 	}
 }
 

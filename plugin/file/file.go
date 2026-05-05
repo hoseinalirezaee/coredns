@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/coredns/coredns/plugin"
+	"github.com/coredns/coredns/plugin/pkg/cachecontrol"
 	"github.com/coredns/coredns/plugin/pkg/fall"
 	clog "github.com/coredns/coredns/plugin/pkg/log"
 	"github.com/coredns/coredns/plugin/transfer"
@@ -123,6 +124,7 @@ func (f File) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (i
 		m.Rcode = dns.RcodeServerFailure
 	}
 
+	cachecontrol.MarkZonefile(ctx)
 	w.WriteMsg(m)
 	return dns.RcodeSuccess, nil
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/plugin/metadata"
+	"github.com/coredns/coredns/plugin/pkg/cachecontrol"
 	"github.com/coredns/coredns/plugin/pkg/dnstest"
 	"github.com/coredns/coredns/plugin/pkg/response"
 	"github.com/coredns/coredns/plugin/test"
@@ -379,6 +380,63 @@ func TestCacheServfailTTL0(t *testing.T) {
 	}
 }
 
+func TestBypassZonefileMarkedResponses(t *testing.T) {
+	tests := []struct {
+		name       string
+		bypass     bool
+		marked     bool
+		kind       string
+		wantPcache int
+		wantNcache int
+	}{
+		{
+			name:   "marked positive bypassed",
+			bypass: true, marked: true, kind: "positive",
+		},
+		{
+			name:   "marked nxdomain bypassed",
+			bypass: true, marked: true, kind: "nxdomain",
+		},
+		{
+			name:   "marked nodata bypassed",
+			bypass: true, marked: true, kind: "nodata",
+		},
+		{
+			name:   "marked servfail answer bypassed",
+			bypass: true, marked: true, kind: "servfail-answer",
+		},
+		{
+			name:   "marked positive cached when disabled",
+			marked: true, kind: "positive", wantPcache: 1,
+		},
+		{
+			name:   "unmarked positive cached when enabled",
+			bypass: true, kind: "positive", wantPcache: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := New()
+			c.bypassZonefile = tc.bypass
+			c.Next = zonefileMarkingBackend(tc.kind, tc.marked)
+
+			req := new(dns.Msg)
+			req.SetQuestion("marked.example.org.", dns.TypeA)
+			rec := dnstest.NewRecorder(&test.ResponseWriter{})
+
+			c.ServeDNS(context.TODO(), rec, req)
+
+			if got := c.pcache.Len(); got != tc.wantPcache {
+				t.Fatalf("positive cache length: got %d, want %d", got, tc.wantPcache)
+			}
+			if got := c.ncache.Len(); got != tc.wantNcache {
+				t.Fatalf("negative cache length: got %d, want %d", got, tc.wantNcache)
+			}
+		})
+	}
+}
+
 func TestServeFromStaleCache(t *testing.T) {
 	c := New()
 	c.Next = ttlBackend(60)
@@ -669,6 +727,35 @@ func servFailBackend(ttl int) plugin.Handler {
 		m.Rcode = dns.RcodeServerFailure
 		w.WriteMsg(m)
 		return dns.RcodeServerFailure, nil
+	})
+}
+
+func zonefileMarkingBackend(kind string, marked bool) plugin.Handler {
+	return plugin.HandlerFunc(func(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
+		m := new(dns.Msg)
+		m.SetReply(r)
+		m.Response, m.RecursionAvailable = true, true
+
+		switch kind {
+		case "positive":
+			m.Answer = []dns.RR{test.A(m.Question[0].Name + " 60 IN A 127.0.0.53")}
+		case "nxdomain":
+			m.Rcode = dns.RcodeNameError
+			m.Ns = []dns.RR{test.SOA("example.org. 60 IN SOA sns.dns.icann.org. noc.dns.icann.org. 2016082540 7200 3600 1209600 60")}
+		case "nodata":
+			m.Ns = []dns.RR{test.SOA("example.org. 60 IN SOA sns.dns.icann.org. noc.dns.icann.org. 2016082540 7200 3600 1209600 60")}
+		case "servfail-answer":
+			m.Rcode = dns.RcodeServerFailure
+			m.Answer = []dns.RR{test.CNAME(m.Question[0].Name + " 60 IN CNAME target.example.org.")}
+		default:
+			panic(fmt.Sprintf("unsupported response kind %q", kind))
+		}
+
+		if marked {
+			cachecontrol.MarkZonefile(ctx)
+		}
+		w.WriteMsg(m)
+		return m.Rcode, nil
 	})
 }
 

@@ -9,6 +9,7 @@ import (
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/plugin/file"
 	"github.com/coredns/coredns/plugin/metrics"
+	"github.com/coredns/coredns/plugin/pkg/cachecontrol"
 	"github.com/coredns/coredns/plugin/pkg/upstream"
 	"github.com/coredns/coredns/plugin/transfer"
 	"github.com/coredns/coredns/request"
@@ -96,6 +97,7 @@ func (a Auto) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (i
 		m.Rcode = dns.RcodeServerFailure
 	}
 
+	cachecontrol.MarkZonefile(ctx)
 	w.WriteMsg(m)
 	return dns.RcodeSuccess, nil
 }

@@ -246,6 +246,12 @@ func cacheParse(c *caddy.Controller) (*Cache, error) {
 					return nil, c.ArgErr()
 				}
 				ca.keepttl = true
+			case "bypass_zonefile":
+				args := c.RemainingArgs()
+				if len(args) != 0 {
+					return nil, c.ArgErr()
+				}
+				ca.bypassZonefile = true
 			default:
 				return nil, c.ArgErr()
 			}

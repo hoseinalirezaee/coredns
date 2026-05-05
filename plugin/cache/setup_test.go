@@ -260,3 +260,32 @@ func TestKeepttl(t *testing.T) {
 		}
 	}
 }
+
+func TestBypassZonefile(t *testing.T) {
+	tests := []struct {
+		input     string
+		shouldErr bool
+		expected  bool
+	}{
+		{"prefetch 1", false, false},
+		{"bypass_zonefile", false, true},
+		{"bypass_zonefile arg1", true, false},
+	}
+	for i, test := range tests {
+		c := caddy.NewTestController("dns", fmt.Sprintf("cache {\n%s\n}", test.input))
+		ca, err := cacheParse(c)
+		if test.shouldErr && err == nil {
+			t.Errorf("Test %v: Expected error but found nil", i)
+			continue
+		} else if !test.shouldErr && err != nil {
+			t.Errorf("Test %v: Expected no error but found error: %v", i, err)
+			continue
+		}
+		if test.shouldErr {
+			continue
+		}
+		if ca.bypassZonefile != test.expected {
+			t.Errorf("Test %v: Expected bypassZonefile=%t but got %t", i, test.expected, ca.bypassZonefile)
+		}
+	}
+}

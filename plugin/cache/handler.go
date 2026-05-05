@@ -8,6 +8,7 @@ import (
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/plugin/metadata"
 	"github.com/coredns/coredns/plugin/metrics"
+	"github.com/coredns/coredns/plugin/pkg/cachecontrol"
 	"github.com/coredns/coredns/request"
 
 	"github.com/miekg/dns"
@@ -118,6 +119,12 @@ func (c *Cache) doPrefetch(ctx context.Context, cw *ResponseWriter, i *item, now
 }
 
 func (c *Cache) doRefresh(ctx context.Context, state request.Request, cw dns.ResponseWriter) (int, error) {
+	if c.bypassZonefile {
+		ctx = cachecontrol.ContextWithBypassMarker(ctx)
+		if setter, ok := cw.(interface{ setBypassContext(context.Context) }); ok {
+			setter.setBypassContext(ctx)
+		}
+	}
 	return plugin.NextOrFailure(c.Name(), c.Next, ctx, cw, state.Req)
 }
 

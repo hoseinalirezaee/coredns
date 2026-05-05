@@ -2,9 +2,11 @@ package auto
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/coredns/coredns/plugin/file"
+	"github.com/coredns/coredns/plugin/pkg/cachecontrol"
 	"github.com/coredns/coredns/plugin/pkg/dnstest"
 	"github.com/coredns/coredns/plugin/test"
 
@@ -97,6 +99,40 @@ func TestAutoServeDNS(t *testing.T) {
 				t.Errorf("Expected code %d, got %d", tt.expectedCode, code)
 			}
 		})
+	}
+}
+
+func TestAutoMarksZonefileResponse(t *testing.T) {
+	t.Parallel()
+
+	a := createTestAutoWithZone(t, "example.org.")
+	m := new(dns.Msg)
+	m.SetQuestion("www.example.org.", dns.TypeA)
+
+	rec := dnstest.NewRecorder(&test.ResponseWriter{})
+	ctx := cachecontrol.ContextWithBypassMarker(context.Background())
+	if _, err := a.ServeDNS(ctx, rec, m); err != nil {
+		t.Fatalf("ServeDNS returned error: %v", err)
+	}
+
+	if !cachecontrol.IsZonefile(ctx) {
+		t.Fatal("expected auto response to mark zonefile context")
+	}
+}
+
+func TestAutoNonServedResponseDoesNotMarkZonefile(t *testing.T) {
+	t.Parallel()
+
+	a := createTestAutoWithZone(t, "example.org.")
+	m := new(dns.Msg)
+	m.SetQuestion("www.other.org.", dns.TypeA)
+
+	rec := dnstest.NewRecorder(&test.ResponseWriter{})
+	ctx := cachecontrol.ContextWithBypassMarker(context.Background())
+	a.ServeDNS(ctx, rec, m)
+
+	if cachecontrol.IsZonefile(ctx) {
+		t.Fatal("non-served response should not mark zonefile context")
 	}
 }
 
@@ -266,3 +302,29 @@ func createTestAuto(zones []string) *Auto {
 
 	return a
 }
+
+func createTestAutoWithZone(t *testing.T, zone string) *Auto {
+	t.Helper()
+
+	z, err := file.Parse(strings.NewReader(autoMarkerZone), zone, "stdin", 0)
+	if err != nil {
+		t.Fatalf("failed to parse test zone: %v", err)
+	}
+
+	return &Auto{
+		Zones: &Zones{
+			Z:       map[string]*file.Zone{zone: z},
+			origins: []string{zone},
+			names:   []string{zone},
+		},
+		Next: nil,
+	}
+}
+
+const autoMarkerZone = `
+$ORIGIN example.org.
+@ 3600 IN SOA ns.example.org. hostmaster.example.org. 1 7200 3600 1209600 3600
+@ 3600 IN NS ns.example.org.
+ns 3600 IN A 192.0.2.53
+www 3600 IN A 192.0.2.1
+`

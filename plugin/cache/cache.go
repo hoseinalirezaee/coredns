@@ -2,6 +2,7 @@
 package cache
 
 import (
+	"context"
 	"encoding/binary"
 	"hash/fnv"
 	"net"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/plugin/pkg/cache"
+	"github.com/coredns/coredns/plugin/pkg/cachecontrol"
 	"github.com/coredns/coredns/plugin/pkg/dnsutil"
 	"github.com/coredns/coredns/plugin/pkg/response"
 	"github.com/coredns/coredns/request"
@@ -50,7 +52,8 @@ type Cache struct {
 	nexcept []string
 
 	// Keep ttl option
-	keepttl bool
+	keepttl        bool
+	bypassZonefile bool
 
 	// Testing.
 	now func() time.Time
@@ -128,6 +131,7 @@ type ResponseWriter struct {
 	dns.ResponseWriter
 	*Cache
 	state  request.Request
+	ctx    context.Context
 	server string // Server handling the request.
 
 	do         bool // When true the original request had the DO bit set.
@@ -140,6 +144,10 @@ type ResponseWriter struct {
 
 	pexcept []string // positive zone exceptions
 	nexcept []string // negative zone exceptions
+}
+
+func (w *ResponseWriter) setBypassContext(ctx context.Context) {
+	w.ctx = ctx
 }
 
 // prefetchAddr is the synthetic remote address for prefetch requests. There is
@@ -243,7 +251,7 @@ func (w *ResponseWriter) WriteMsg(res *dns.Msg) error {
 		res.AuthenticatedData = false
 	}
 
-	if hasKey && duration > 0 {
+	if hasKey && duration > 0 && !(w.bypassZonefile && cachecontrol.IsZonefile(w.ctx)) {
 		if w.state.Match(res) {
 			w.set(res, key, mt, duration)
 			cacheSize.WithLabelValues(w.server, Success, w.zonesMetricLabel, w.viewMetricLabel).Set(float64(w.pcache.Len()))
