@@ -48,6 +48,7 @@ import (
 	_ "github.com/coredns/coredns/plugin/pprof"
 	_ "github.com/coredns/coredns/plugin/proxyproto"
 	_ "github.com/coredns/coredns/plugin/quic"
+	_ "github.com/coredns/coredns/plugin/ratelimit"
 	_ "github.com/coredns/coredns/plugin/ready"
 	_ "github.com/coredns/coredns/plugin/reload"
 	_ "github.com/coredns/coredns/plugin/rewrite"

@@ -100,8 +100,22 @@ func (c *Cache) tryPrefetch(ctx context.Context, i *item, server string, req *dn
 	cw := newPrefetchResponseWriter(server, req, do, cd, c)
 	go func() {
 		defer i.refreshing.Store(false)
-		c.doPrefetch(ctx, cw, i, now)
+		c.doPrefetch(WithPrefetchContext(ctx), cw, i, now)
 	}()
+}
+
+type prefetchContextKey struct{}
+
+// WithPrefetchContext marks a cache refresh as an internal prefetch. Plugins
+// downstream from cache can use this marker to avoid charging the client.
+func WithPrefetchContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, prefetchContextKey{}, true)
+}
+
+// IsPrefetchContext reports whether ctx belongs to an internal cache prefetch.
+func IsPrefetchContext(ctx context.Context) bool {
+	value, _ := ctx.Value(prefetchContextKey{}).(bool)
+	return value
 }
 
 func (c *Cache) doPrefetch(ctx context.Context, cw *ResponseWriter, i *item, now time.Time) {
