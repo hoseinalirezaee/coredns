@@ -20,6 +20,7 @@ import (
 
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 const (
@@ -41,26 +42,25 @@ const (
 )
 
 var (
-	requestRejected = prometheus.NewCounterVec(prometheus.CounterOpts{
+	requestRejected = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "coredns", Subsystem: "ratelimit", Name: "request_rejects_total",
 		Help: "Number of DNS requests rejected by the per-client request limiter.",
 	}, []string{"server", "zone", "view"})
-	transferRejected = prometheus.NewCounterVec(prometheus.CounterOpts{
+	transferRejected = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "coredns", Subsystem: "ratelimit", Name: "transfer_rejects_total",
 		Help: "Number of forwarded DNS responses rejected by the per-client transfer limiter.",
 	}, []string{"server", "zone", "view"})
-	accountedBytes = prometheus.NewCounterVec(prometheus.CounterOpts{
+	accountedBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "coredns", Subsystem: "ratelimit", Name: "transfer_bytes_total",
 		Help: "Forwarded DNS query and response bytes charged to client buckets.",
 	}, []string{"server", "zone", "view", "direction"})
-	exemptRequests = prometheus.NewCounterVec(prometheus.CounterOpts{
+	exemptRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "coredns", Subsystem: "ratelimit", Name: "exempt_requests_total",
 		Help: "DNS requests from clients exempted from rate limiting.",
 	}, []string{"server", "zone", "view"})
 )
 
 func init() {
-	prometheus.MustRegister(requestRejected, transferRejected, accountedBytes, exemptRequests)
 	plugin.Register(clientQPSName, setupClientQPS)
 	plugin.Register(transferLimitName, setupTransferLimit)
 }
